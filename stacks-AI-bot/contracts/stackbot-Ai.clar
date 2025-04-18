@@ -214,3 +214,59 @@
     (ok true)
   )
 )
+;; AI Trading functions
+(define-public (execute-ai-trade 
+  (strategy-id uint) 
+  (token-x (string-ascii 32)) 
+  (token-y (string-ascii 32))
+  (amount uint)
+  (ai-prediction int)  ;; Predicted price movement (-100 to 100)
+  (confidence uint)    ;; AI confidence level (0-100)
+)
+  (let (
+    (user-balance (get-balance tx-sender))
+    (trading-pair (unwrap! (map-get? trading-pairs { token-x: token-x, token-y: token-y }) 
+                          (err ERR_INVALID_TOKEN)))
+    (strategy (unwrap! (map-get? user-strategies { user: tx-sender, strategy-id: strategy-id }) 
+                      (err ERR_STRATEGY_NOT_FOUND)))
+    (performance (unwrap! (map-get? strategy-performance { strategy-id: strategy-id })
+                         (err ERR_STRATEGY_NOT_FOUND)))
+  )
+    ;; Verify conditions
+    (asserts! (var-get trading-enabled) (err ERR_TRADING_DISABLED))
+    (asserts! (get active strategy) (err ERR_STRATEGY_NOT_FOUND))
+    (asserts! (get enabled trading-pair) (err ERR_MARKET_CLOSED))
+    (asserts! (>= amount (get min-trade-amount trading-pair)) (err ERR_INVALID_AMOUNT))
+    (asserts! (<= amount (get max-trade-amount trading-pair)) (err ERR_INVALID_AMOUNT))
+    (asserts! (>= user-balance amount) (err ERR_INSUFFICIENT_BALANCE))
+    
+    ;; Calculate fee
+    (let (
+      (fee-amount (/ (* amount (var-get platform-fee)) u1000))
+      (trade-amount (- amount fee-amount))
+      (trade-success (> (+ ai-prediction confidence) u50))  ;; Simplified simulation
+      (new-roi (if trade-success 
+                  (+ (get roi performance) (/ (* trade-amount u5) u100))  ;; 5% gain on successful trade
+                  (- (get roi performance) (/ (* trade-amount u2) u100))  ;; 2% loss on failed trade
+                ))
+      (new-trades (+ (get trades-executed performance) u1))
+      (new-win-rate (/ (* (+ (if trade-success u1 u0) 
+                            (* (get win-rate performance) (get trades-executed performance))) 
+                         u100) 
+                      new-trades))
+    )
+      ;; Process fee
+      (map-set user-balances tx-sender (- user-balance fee-amount))
+      (map-set user-balances (var-get fee-address) 
+        (+ (default-to u0 (map-get? user-balances (var-get fee-address))) fee-amount))
+      
+      ;; Update strategy performance
+      (map-set strategy-performance
+        { strategy-id: strategy-id }
+        {
+          roi: new-roi,
+          trades-executed: new-trades,
+          win-rate: new-win-rate,
+          last-trade-block: block-height
+        }
+      )
