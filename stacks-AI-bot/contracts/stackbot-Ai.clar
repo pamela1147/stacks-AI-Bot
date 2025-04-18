@@ -91,3 +91,64 @@
   ;; This is a placeholder
   u0
 )
+(define-public (create-strategy 
+  (name (string-ascii 64)) 
+  (risk-level uint)
+)
+  (let (
+    (strategy-id (get-next-strategy-id tx-sender))
+    (current-block-height block-height)
+  )
+    (asserts! (var-get trading-enabled) (err ERR_TRADING_DISABLED))
+    (asserts! (> (get-balance tx-sender) u0) (err ERR_INSUFFICIENT_FUNDS))
+    
+    ;; Create new strategy
+    (map-set user-strategies 
+      { user: tx-sender, strategy-id: strategy-id }
+      {
+        name: name,
+        risk-level: risk-level,
+        active: true,
+        created-at: current-block-height,
+        last-updated: current-block-height
+      }
+    )
+    
+    ;; Initialize performance tracking
+    (map-set strategy-performance
+      { strategy-id: strategy-id }
+      {
+        roi: 0,
+        trades-executed: u0,
+        win-rate: u0,
+        last-trade-block: current-block-height
+      }
+    )
+    
+    (ok strategy-id)
+  )
+)
+
+(define-public (update-strategy 
+  (strategy-id uint) 
+  (name (string-ascii 64)) 
+  (risk-level uint)
+  (active bool)
+)
+  (let (
+    (strategy (unwrap! (map-get? user-strategies { user: tx-sender, strategy-id: strategy-id }) 
+                      (err ERR_STRATEGY_NOT_FOUND)))
+  )
+    (map-set user-strategies
+      { user: tx-sender, strategy-id: strategy-id }
+      {
+        name: name,
+        risk-level: risk-level,
+        active: active,
+        created-at: (get created-at strategy),
+        last-updated: block-height
+      }
+    )
+    (ok true)
+  )
+)
