@@ -270,3 +270,82 @@
           last-trade-block: block-height
         }
       )
+      ;; In a real contract, this would interact with DEX or token contracts
+      ;; For now, we just simulate the trade result
+      (ok trade-success)
+    )
+  )
+)
+
+;; Admin functions
+(define-public (set-contract-owner (new-owner principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (var-set contract-owner new-owner)
+    (ok true)
+  )
+)
+
+(define-public (set-fee-address (new-address principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (var-set fee-address new-address)
+    (ok true)
+  )
+)
+
+(define-public (set-platform-fee (new-fee uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (asserts! (<= new-fee u100) (err ERR_INVALID_AMOUNT))  ;; Max fee 10%
+    (var-set platform-fee new-fee)
+    (ok true)
+  )
+)
+
+(define-public (enable-trading (enabled bool))
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (var-set trading-enabled enabled)
+    (ok true)
+  )
+)
+
+(define-public (configure-trading-pair 
+  (token-x (string-ascii 32)) 
+  (token-y (string-ascii 32))
+  (enabled bool)
+  (min-trade-amount uint)
+  (max-trade-amount uint)
+  (last-price uint)
+)
+  (begin
+    (asserts! (is-eq tx-sender (var-get contract-owner)) (err ERR_UNAUTHORIZED))
+    (map-set trading-pairs
+      { token-x: token-x, token-y: token-y }
+      {
+        enabled: enabled,
+        min-trade-amount: min-trade-amount,
+        max-trade-amount: max-trade-amount,
+        last-price: last-price
+      }
+    )
+    (ok true)
+  )
+)
+
+;; Read-only functions for analytics
+(define-read-only (get-strategy 
+  (user principal)
+  (strategy-id uint)
+)
+  (map-get? user-strategies { user: user, strategy-id: strategy-id })
+)
+
+(define-read-only (get-strategy-performance (strategy-id uint))
+  (map-get? strategy-performance { strategy-id: strategy-id })
+)
+
+(define-read-only (get-trading-pair (token-x (string-ascii 32)) (token-y (string-ascii 32)))
+  (map-get? trading-pairs { token-x: token-x, token-y: token-y })
+)
